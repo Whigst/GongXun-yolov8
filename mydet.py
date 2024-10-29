@@ -6,9 +6,14 @@ from queue import Queue
 from threading import Thread
 
 class MyYolo(Thread):
-    def __init__(self):
+    def __init__(self, *args):
         super().__init__()
         self.model = YOLO("models/cirAndMat.engine", task='detect')
+        self.flag = False
+        if not len(args) == 0:
+            self.frame_queue = args[0]
+            self.result_queue = args[1]
+            self.flag = True
     def predict(self, source, conf, iou, imgsz):
         return self.model.predict(source=source, conf=conf, iou=iou, imgsz=imgsz)
     def preheating_predict(self, source, conf, iou, imgsz):
@@ -19,14 +24,38 @@ class MyYolo(Thread):
         self.preheating_predict(source="ultralytics/assets/3.jpg", conf=0.90, iou=0.50, imgsz=320)
         e = time.time()
         print(f"take {e - s} seconds to load the model")
+    def process_frame(self):
+        while True:
+            if not self.frame_queue.empty():
+                t1 = cv2.getTickCount()
+                frame = self.frame_queue.get()
+                results = self.model.predict(source=frame, conf=0.90, imgsz=320, iou=0.50)
+                t2 = cv2.getTickCount()
+                elapsed_time = (t2 - t1) / cv2.getTickFrequency()
+                fps = int(1/elapsed_time)
+                print(f"process_frames: {fps} fps")
+                if not self.result_queue.full():
+                    self.result_queue.put(results)
+            else:
+                time.sleep(0.0001)
     def run(self):
-        self.model_Load()
+        if self.flag:
+            self.process_frame()
+        else:
+            self.model_Load()
 
-class CVLoaderAndQRScan(Thread):
-    def __init__(self, cap):
+class Capture(Thread):
+    def __init__(self, *args):
         super().__init__()
-        self.cap = cap
-    def run(self):
+        if len(args) == 2:
+            self.cap = args[0]
+            self.frame_queue = args[1]
+        elif len(args) == 1:
+            self.cap = args[0]
+            self.frame_queue = None
+        else:
+            raise ValueError("Capture thread must be initialized with either 1 or 2 arguments")
+    def CapLoadAndQRScan(self):
         s = time.time()
         print(self.cap.isOpened())
         while self.cap.isOpened():
@@ -43,39 +72,17 @@ class CVLoaderAndQRScan(Thread):
                     continue
             else:
                 print("No frame captured")
-
-class CaptureFrames(Thread):
-    def __init__(self, cap, frame_queue):
-        super().__init__()
-        self.cap = cap
-        self.frame_queue = frame_queue
-    def run(self):
+    def CaptureFrames(self):
         while self.cap.isOpened():
             if self.frame_queue.empty():
                 ret, frame = self.cap.read()
                 if ret and not self.frame_queue.full():
                     self.frame_queue.put(frame)
-
-class ProcessFrames(Thread):
-    def __init__(self, model, frame_queue, result_queue):
-        super().__init__()
-        self.model = model
-        self.frame_queue = frame_queue
-        self.result_queue = result_queue
     def run(self):
-        while True:
-            if not self.frame_queue.empty():
-                t1 = cv2.getTickCount()
-                frame = self.frame_queue.get()
-                results = self.model.model.predict(source=frame, conf=0.90, imgsz=320, iou=0.50)
-                t2 = cv2.getTickCount()
-                elapsed_time = (t2 - t1) / cv2.getTickFrequency()
-                fps = int(1/elapsed_time)
-                print(f"process_frames: {fps} fps")
-                if not self.result_queue.full():
-                    self.result_queue.put(results)
-            else:
-                time.sleep(0.0001)
+        if self.frame_queue is None:
+            self.CapLoadAndQRScan()
+        else:
+            self.CaptureFrames()
 
 class MergeResults(Thread):
     def __init__(self, result_queue, merged_results_queue):
@@ -119,11 +126,10 @@ class Main:
         self.result_queue = Queue(maxsize=1000)
         self.merged_results_queue = Queue(maxsize=1000)
         self.model = MyYolo()
-        self.cap = cv2.VideoCapture("/dev/video1")
+        self.cap = cv2.VideoCapture("/dev/video0")
 
     def run(self):
-        t1 = CVLoaderAndQRScan(self.cap)
-        #t2 = ModelLoader(self.model)
+        t1 = Capture(self.cap)
         t2 = self.model
         t2.start()
         t1.start()
@@ -132,10 +138,13 @@ class Main:
         t2.join()
         print("model_Loader finished")
         print(f"{self.frame_queue.empty()}")
-        t3 = CaptureFrames(self.cap, self.frame_queue)
-        t4 = ProcessFrames(self.model, self.frame_queue, self.result_queue)
-        t5 = ProcessFrames(self.model, self.frame_queue, self.result_queue)
-        t6 = ProcessFrames(self.model, self.frame_queue, self.result_queue)
+        t3 = Capture(self.cap, self.frame_queue)
+        # t4 = ProcessFrames(self.model, self.frame_queue, self.result_queue)
+        # t5 = ProcessFrames(self.model, self.frame_queue, self.result_queue)
+        # t6 = ProcessFrames(self.model, self.frame_queue, self.result_queue)
+        t4 = MyYolo(self.frame_queue, self.result_queue)
+        t5 = MyYolo(self.frame_queue, self.result_queue)
+        t6 = MyYolo(self.frame_queue, self.result_queue)
         t7 = MergeResults(self.result_queue, self.merged_results_queue)
         t8 = DisplayResults(self.merged_results_queue)
         t3.start()
