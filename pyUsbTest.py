@@ -21,7 +21,8 @@ def write_to_serial(ser, data):
         print(f"Failed {e}")
 
 def main():
-    port = "/dev/ttyAMA1"
+    # port = "/dev/ttyAMA1"
+    port = "/dev/ttyUSB0"
     baud_rate = 115200
 
     ser = open_serial(port, baud_rate)
