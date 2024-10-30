@@ -144,7 +144,7 @@ class Main:
         self.result_queue = Queue(maxsize=1000)    # 结果队列
         self.merged_results_queue = Queue(maxsize=1000)    # 合并结果队列
         self.model = MyYolo()    # 模型线程， 先加载模型
-        self.cap = cv2.VideoCapture("/dev/video1")    # 摄像头
+        self.cap = cv2.VideoCapture("/dev/video0")    # 摄像头
 
     def run(self):
         t1 = Capture(self.cap)    # 捕获帧线程

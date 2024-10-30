@@ -363,6 +363,26 @@ class Annotator:
             else:
                 p1, p2 = (int(box[0]), int(box[1])), (int(box[2]), int(box[3]))
                 cv2.rectangle(self.im, p1, p2, color, thickness=self.lw, lineType=cv2.LINE_AA)
+                 # 补充代码：
+                # 在预测图中绘制一个中心坐标红点
+                # self.im表示圆点绘制的位置，((p1[0]+p2[0])//2,(p1[1]+p2[1])//2)表示坐标位置//表示取整除法
+                # self.lw表示线宽和半径，（0，0，225）表示颜色
+                cv2.circle(self.im,((p1[0]+p2[0])//2,(p1[1]+p2[1])//2),self.lw,(0,0,225),self.lw)
+                # 创建中心点坐标变量
+                Center = (((p1[0]+p2[0])/2+p1[0]),((p1[1]+p2[1])/2+p1[1]))
+                # 用于在图像上添加文本
+                # str（Center）表示要添加的文本内容，
+                # ((p1[0]+p2[0])//2,(p1[1]+p2[1])//2)表示文本起始点坐标
+                # 0代表字体类型， self.lw/3表示字体大小，txt.color表示文本颜色
+                # 4表示线宽，lineType表示线型
+                cv2.putText(self.im, str(Center),((p1[0]+p2[0])//2,(p1[1]+p2[1])//2),0,
+                            self.lw/3,txt_color,thickness=4,lineType=cv2.LINE_AA)
+                # # 打印坐标信息
+                print("左上点的坐标为：(" + str(p1[0]) + "," + str(p1[1]) + ")，右上点的坐标为(" + str(p2[0]) + "," + str(
+                    p1[1]) + ")")
+                print("左下点的坐标为：(" + str(p1[0]) + "," + str(p2[1]) + ")，右下点的坐标为(" + str(p2[0]) + "," + str(
+                    p2[1]) + ")")
+                print("中心点的坐标为：(" + str((p2[0] - p1[0]) / 2 + p1[0]) + "," + str((p2[1] - p1[1]) / 2 + p1[1]) + ")")
             if label:
                 w, h = cv2.getTextSize(label, 0, fontScale=self.sf, thickness=self.tf)[0]  # text width, height
                 h += 3  # add pixels to pad text
