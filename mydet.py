@@ -4,6 +4,7 @@ import cv2
 import time
 from queue import Queue
 from threading import Thread
+from SerialTest import MySerial
 
 #主要为与模型有关的类， 包括模型加载， 预测， 预加热， 处理帧
 class MyYolo(Thread):
@@ -14,6 +15,7 @@ class MyYolo(Thread):
         if not len(args) == 0:
             self.frame_queue = args[0]
             self.result_queue = args[1]
+            self.point_queue = args[2]
             self.flag = True
     
     def predict(self, source, conf, iou, imgsz):    # 预测函数
@@ -25,7 +27,7 @@ class MyYolo(Thread):
             
     def model_Load(self):    # 模型加载函数
         s = time.time()
-        self.preheating_predict(source="ultralytics/assets/3.jpg", conf=0.90, iou=0.50, imgsz=320)
+        self.preheating_predict(source="ultralytics/assets/3.jpg", conf=0.95, iou=0.50, imgsz=320)
         e = time.time()
         print(f"take {e - s} seconds to load the model")
         
@@ -35,6 +37,13 @@ class MyYolo(Thread):
                 t1 = cv2.getTickCount()
                 frame = self.frame_queue.get()
                 results = self.model.predict(source=frame, conf=0.90, imgsz=320, iou=0.50)
+                for r in results:
+                    for box in r.boxes:
+                        x1, y1, x2, y2 = box.xyxy.tolist()[0]
+                        center_x = (x1 + x2) / 2
+                        center_y = (y1 + y2) / 2
+                        if not self.point_queue.full():
+                            self.point_queue.put((center_x, center_y))
                 t2 = cv2.getTickCount()
                 elapsed_time = (t2 - t1) / cv2.getTickFrequency()
                 fps = int(1/elapsed_time)
@@ -99,17 +108,26 @@ class PostProcess(Thread):
     def __init__(self, *args):
         super().__init__()
         self.merged_results_queue = args[0]
-        if len(args) == 2:
+        if len(args) == 3:
             self.result_queue = args[1]
+            self.point_queue = args[2]
         else:
             self.result_queue = None
+            self.point_queue = None
             
     def mergeResults(self):    # 结果合并函数
         while True:
             if not self.result_queue.empty():
                 results = []
                 while not self.result_queue.empty():
-                    results.extend(self.result_queue.get())
+                    result = self.result_queue.get()
+                    results.extend(result)
+                    # 获取结果的中心点并放入point_queue
+                    # for box in result.boxes:
+                    #     x1, y1, x2, y2 = box.xyxy.tolist()[0]
+                    #     center_x = (x1 + x2) / 2
+                    #     center_y = (y1 + y2) / 2
+                    #     self.point_queue.put((center_x, center_y))
                 if not self.merged_results_queue.full():
                     self.merged_results_queue.put(results)
             else:
@@ -137,18 +155,38 @@ class PostProcess(Thread):
         else:
             self.mergeResults()
 
+# 串口发送线程类
+class SerialSend(Thread):
+    def __init__(self, ser, point_queue):
+        super().__init__()
+        self.ser = ser
+        self.point_queue = point_queue
+
+    def run(self):
+        while True:
+            if not self.point_queue.empty():
+                point = self.point_queue.get()
+                data = f"{point[0]},{point[1]}\n".encode('utf-8')
+                self.ser.write(data)
+                print(f"Sent: {data}")
+            else:
+                time.sleep(0.0001)
+
 #主函数， 用于初始化线程
 class Main:
     def __init__(self):
         self.frame_queue = Queue(maxsize=1000)    # 帧队列
         self.result_queue = Queue(maxsize=1000)    # 结果队列
         self.merged_results_queue = Queue(maxsize=1000)    # 合并结果队列
+        self.point_queue = Queue(maxsize=1000)    # 中心点坐标队列
         self.model = MyYolo()    # 模型线程， 先加载模型
         self.cap = cv2.VideoCapture("/dev/video0")    # 摄像头
-
+        self.ser = MySerial("/dev/ttyUSB0", 115200)
     def run(self):
-        t1 = Capture(self.cap)    # 捕获帧线程
+        t1 = Capture(self.cap)    # 加载cv和二维码扫描线程
+        #ser_t = Thread(target=self.ser.run_serial, args=(self.point_queue,))
         t2 = self.model
+        #ser_t.start()
         t2.start()
         t1.start()
         t1.join()
@@ -157,17 +195,19 @@ class Main:
         print("model_Loader finished")
         print(f"{self.frame_queue.empty()}")
         t3 = Capture(self.cap, self.frame_queue)    # 捕获帧线程
-        t4 = MyYolo(self.frame_queue, self.result_queue)    # 处理帧线程
-        t5 = MyYolo(self.frame_queue, self.result_queue)
-        t6 = MyYolo(self.frame_queue, self.result_queue)
-        t7 = PostProcess(self.merged_results_queue, self.result_queue)    # 结果处理线程
+        t4 = MyYolo(self.frame_queue, self.result_queue, self.point_queue)    # 处理帧线程
+        t5 = MyYolo(self.frame_queue, self.result_queue, self.point_queue)
+        t6 = MyYolo(self.frame_queue, self.result_queue, self.point_queue)
+        t7 = PostProcess(self.merged_results_queue, self.result_queue, self.point_queue)    # 结果处理线程
         t8 = PostProcess(self.merged_results_queue)    # 结果显示线程
+        t9 = SerialSend(self.ser, self.point_queue)    # 串口发送线程
         t3.start()
         t4.start()
         t5.start()
         t6.start()
         t7.start()
         t8.start()
+        t9.start()
 
 if __name__ == "__main__":
     main = Main()
