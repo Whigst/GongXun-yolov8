@@ -166,7 +166,7 @@ class SerialSend(Thread):
         while True:
             if not self.point_queue.empty():
                 point = self.point_queue.get()
-                data = f"{point[0]},{point[1]}\r\n".encode('utf-8')
+                data = f"a{point[0]:5.1f},{point[1]:5.1f}d\r\n".encode('utf-8')
                 self.ser.write(data)
                 print(f"Sent: {data}")
             else:
