@@ -3,7 +3,7 @@ from pyzbar.pyzbar import decode
 import cv2
 import time
 from queue import Queue
-from threading import Thread, Event
+from threading import Thread
 from SerialTest import MySerial
 
 #主要为与模型有关的类， 包括模型加载， 预测， 预加热， 处理帧
@@ -13,17 +13,16 @@ class MyYolo(Thread):
         self.model = YOLO("models/cirAndMat.engine", task='detect')  # 加载模型
         self.flag = False  # 标志位， 用于判断是否需要处理帧
         if not len(args) == 0:
-            self.frame_queue = args[1]
-            self.result_queue = args[2]
-            self.point_queue = args[3]
-            self.qr_scanned_event = args[0]
+            self.frame_queue = args[0]
+            self.result_queue = args[1]
+            self.point_queue = args[2]
             self.flag = True
     
     def predict(self, source, conf, iou, imgsz):    # 预测函数
         return self.model.predict(source=source, conf=conf, iou=iou, imgsz=imgsz)
     
     def preheating_predict(self, source, conf, iou, imgsz):    # 预加热函数
-        for _ in range(10):
+        for _ in range(100):
             self.model.predict(source=source, conf=conf, iou=iou, imgsz=imgsz)
             
     def model_Load(self):    # 模型加载函数
@@ -34,7 +33,6 @@ class MyYolo(Thread):
         
     def process_frame(self):    # 处理帧函数
         while True:
-            self.qr_scanned_event.wait()
             if not self.frame_queue.empty():
                 t1 = cv2.getTickCount()
                 frame = self.frame_queue.get()
@@ -65,12 +63,14 @@ class MyYolo(Thread):
 class Capture(Thread):
     def __init__(self, *args):
         super().__init__()
-        self.cap = args[0]
-        self.qr_scanned_event = args[1]
-        if len(args) == 3:
-            self.frame_queue = args[2]
-        else:
+        if len(args) == 2:
+            self.cap = args[0]
+            self.frame_queue = args[1]
+        elif len(args) == 1:
+            self.cap = args[0]
             self.frame_queue = None
+        else:
+            raise ValueError("Capture thread must be initialized with either 1 or 2 arguments")
         
     def CapLoadAndQRScan(self):    # 摄像头加载与二维码扫描函数
         s = time.time()
@@ -82,17 +82,15 @@ class Capture(Thread):
                 if decoded_objects and len(decoded_objects) > 0:
                     for obj in decoded_objects:
                         print(f"Decoded Data: {obj.data.decode('utf-8')}")
-                        self.qr_scanned_event.set()
                         e = time.time()
                         print(f"take {e - s} seconds to decode the QR")
                     break
                 else:
                     continue
             else:
-                break
+                print("No frame captured")
                 
     def CaptureFrames(self):    # 捕获帧函数
-        self.qr_scanned_event.wait()
         while self.cap.isOpened():
             if self.frame_queue.empty():
                 ret, frame = self.cap.read()
@@ -109,18 +107,16 @@ class Capture(Thread):
 class PostProcess(Thread):
     def __init__(self, *args):
         super().__init__()
-        self.qr_scanned_event = args[0]
-        self.merged_results_queue = args[1]
-        if len(args) == 4:
-            self.result_queue = args[2]
-            self.point_queue = args[3]
+        self.merged_results_queue = args[0]
+        if len(args) == 3:
+            self.result_queue = args[1]
+            self.point_queue = args[2]
         else:
             self.result_queue = None
             self.point_queue = None
             
     def mergeResults(self):    # 结果合并函数
         while True:
-            self.qr_scanned_event.wait()
             if not self.result_queue.empty():
                 results = []
                 while not self.result_queue.empty():
@@ -139,7 +135,6 @@ class PostProcess(Thread):
                 
     def display_results(self):    # 结果显示函数
         while True:
-            self.qr_scanned_event.wait()
             if not self.merged_results_queue.empty():
                 results = self.merged_results_queue.get()
                 annotated_frame = results[0].plot()
@@ -162,15 +157,13 @@ class PostProcess(Thread):
 
 # 串口发送线程类
 class SerialSend(Thread):
-    def __init__(self, qr_scanned_event, ser, point_queue):
+    def __init__(self, ser, point_queue):
         super().__init__()
-        self.qr_scanned_event = qr_scanned_event
         self.ser = ser
         self.point_queue = point_queue
 
     def run(self):
         while True:
-            self.qr_scanned_event.wait()
             if not self.point_queue.empty():
                 point = self.point_queue.get()
                 data = f"a{point[0]:5.1f},{point[1]:5.1f}d\r\n".encode('utf-8')
@@ -178,42 +171,6 @@ class SerialSend(Thread):
                 print(f"Sent: {data}")
             else:
                 time.sleep(0.0001)
-
-# 守护线程类
-class DaemonThread(Thread):
-    def __init__(self, *args):
-        super().__init__()
-        self.capture_thread = args[0]
-        self.qr_scanned_event = args[1]
-        if len(args) == 3:
-            self.frame_queue = args[2]
-        else:
-            self.frame_queue = None
-
-    def run(self):
-        while True:
-            if not self.capture_thread.is_alive():
-                print("Capture thread is not alive, restarting...")
-                try:
-                    self.capture_thread.cap.release()
-                except:
-                    pass
-                self.capture_thread.cap = self.initialize_camera()
-                if self.frame_queue is not None:
-                    self.capture_thread = Capture(self.capture_thread.cap, self.qr_scanned_event, self.frame_queue)
-                else:
-                    self.capture_thread = Capture(self.capture_thread.cap, self.qr_scanned_event)
-                self.capture_thread.start()
-                self.qr_scanned_event.clear()
-            time.sleep(1)
-
-    def initialize_camera(self):
-        for i in range(2):
-            cap = cv2.VideoCapture(i)
-            if cap.isOpened():
-                print(f"Camera {i} opened successfully")
-                return cap
-        raise Exception("No camera could be opened")
 
 #主函数， 用于初始化线程
 class Main:
@@ -223,51 +180,51 @@ class Main:
         self.merged_results_queue = Queue(maxsize=1000)    # 合并结果队列
         self.point_queue = Queue(maxsize=1000)    # 中心点坐标队列
         self.model = MyYolo()    # 模型线程， 先加载模型
-        self.cap = self.initialize_camera()    # 初始化摄像头
+        self.cap = cv2.VideoCapture("/dev/video0")    # 摄像头
         self.ser = MySerial("/dev/ttyUSB0", 115200)
-        self.qr_scanned_event = Event()
-        self.qr_scanned_event.clear()
-    
-    def initialize_camera(self):
-        for i in range(2):
-            cap = cv2.VideoCapture(i)
-            if cap.isOpened():
-                print(f"Camera {i} opened successfully")
-                return cap
-        raise Exception("No camera could be opened")
-    
-    def run(self):
-        t1 = Capture(self.cap, self.qr_scanned_event)    # 加载cv和二维码扫描线程
-        d1 = DaemonThread(t1, self.qr_scanned_event)    # 守护线程， 用于捕获帧线程的异常，防止摄像头路径突然改变
-        #ser_t = Thread(target=self.ser.run_serial, args=(self.point_queue,))
+        self.threads = []
+        self.running = True
+
+    def stop_threads(self):
+        self.running = False
+        for thread in self.threads:
+            if thread.is_alive():
+                thread.join()
+
+    def restart_capture(self):
+        self.stop_threads()
+        self.cap.release()
+        self.ser.close()
+        time.sleep(1)  # 等待一段时间以确保设备已断开
+        self.cap = cv2.VideoCapture("/dev/video1")  # 尝试重新连接摄像头
+        self.ser = MySerial("/dev/ttyUSB1", 115200)  # 尝试重新连接串口
+        self.run_threads()
+
+    def run_threads(self):
+        self.running = True
+        t1 = Capture(self.cap)    # 加载cv和二维码扫描线程
         t2 = self.model
-        #ser_t.start()
-        t2.start()
-        t1.start()
-        d1.start()
-        t1.join()
-        print("cv_Loader_And_QR_Scan finished")
-        t2.join()
-        print("model_Loader finished")
-        print(f"{self.frame_queue.empty()}")
-        t3 = Capture(self.cap, self.qr_scanned_event, self.frame_queue)    # 捕获帧线程
-        d2 = DaemonThread(t3, self.qr_scanned_event, self.frame_queue)    # 守护线程， 用于捕获帧线程的异常，防止摄像头路径突然改变
-        t4 = MyYolo(self.qr_scanned_event, self.frame_queue, self.result_queue, self.point_queue)    # 处理帧线程
-        t5 = MyYolo(self.qr_scanned_event, self.frame_queue, self.result_queue, self.point_queue)
-        t6 = MyYolo(self.qr_scanned_event, self.frame_queue, self.result_queue, self.point_queue)
-        t7 = PostProcess(self.qr_scanned_event, self.merged_results_queue, self.result_queue, self.point_queue)    # 结果处理线程
-        t8 = PostProcess(self.qr_scanned_event, self.merged_results_queue)    # 结果显示线程
-        t9 = SerialSend(self.qr_scanned_event, self.ser, self.point_queue)    # 串口发送线程
-        t3.start()
-        d2.start()
-        t4.start()
-        t5.start()
-        t6.start()
-        t7.start()
-        t8.start()
-        t9.start()
-        self.qr_scanned_event.set()  # 设置事件为已扫描二维码
-        
+        t3 = Capture(self.cap, self.frame_queue)    # 捕获帧线程
+        t4 = MyYolo(self.frame_queue, self.result_queue, self.point_queue)    # 处理帧线程
+        t5 = MyYolo(self.frame_queue, self.result_queue, self.point_queue)
+        t6 = MyYolo(self.frame_queue, self.result_queue, self.point_queue)
+        t7 = PostProcess(self.merged_results_queue, self.result_queue, self.point_queue)    # 结果处理线程
+        t8 = PostProcess(self.merged_results_queue)    # 结果显示线程
+        t9 = SerialSend(self.ser, self.point_queue)    # 串口发送线程
+
+        self.threads = [t1, t2, t3, t4, t5, t6, t7, t8, t9]
+
+        for thread in self.threads:
+            thread.start()
+
+        while self.running:
+            if not self.cap.isOpened() or not self.ser.is_open:
+                print("设备断开连接，尝试重新连接...")
+                self.restart_capture()
+            time.sleep(1)
+
+    def run(self):
+        self.run_threads()
 
 if __name__ == "__main__":
     main = Main()
