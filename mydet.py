@@ -27,7 +27,7 @@ class MyYolo(Thread):
             
     def model_Load(self):    # 模型加载函数
         s = time.time()
-        self.preheating_predict(source="ultralytics/assets/3.jpg", conf=0.95, iou=0.50, imgsz=320)
+        self.preheating_predict(source="ultralytics/assets/3.jpg", conf=0.75, iou=0.50, imgsz=320)
         e = time.time()
         print(f"take {e - s} seconds to load the model")
         
@@ -36,7 +36,7 @@ class MyYolo(Thread):
             if not self.frame_queue.empty():
                 t1 = cv2.getTickCount()
                 frame = self.frame_queue.get()
-                results = self.model.predict(source=frame, conf=0.90, imgsz=320, iou=0.50)
+                results = self.model.predict(source=frame, conf=0.85, imgsz=320, iou=0.50)
                 for r in results:
                     for box in r.boxes:
                         x1, y1, x2, y2 = box.xyxy.tolist()[0]
@@ -161,14 +161,19 @@ class SerialSend(Thread):
         super().__init__()
         self.ser = ser
         self.point_queue = point_queue
+        self.last_sent_time = time.time()
 
     def run(self):
         while True:
+            current_time = time.time()
             if not self.point_queue.empty():
                 point = self.point_queue.get()
-                data = f"a{point[0]:5.1f},{point[1]:5.1f}d\r\n".encode('utf-8')
-                self.ser.write(data)
-                print(f"Sent: {data}")
+                # Check if 0.02 seconds have passed since the last send
+                if current_time - self.last_sent_time >= 0.05:
+                    data = f"a{point[0]:5.1f},{point[1]:5.1f}d\r\n".encode('utf-8')
+                    self.ser.write(data)
+                    print(f"Sent: {data}")
+                    self.last_sent_time = current_time
             else:
                 time.sleep(0.0001)
 
@@ -189,7 +194,7 @@ class Main:
         #ser_t.start()
         t2.start()
         t1.start()
-        t1.join()
+        #t1.join()
         print("cv_Loader_And_QR_Scan finished")
         t2.join()
         print("model_Loader finished")
