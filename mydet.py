@@ -6,6 +6,8 @@ from queue import Queue
 from threading import Thread
 from SerialTest import MySerial
 
+itemColorFlag = 0
+
 #主要为与模型有关的类， 包括模型加载， 预测， 预加热， 处理帧
 class MyYolo(Thread):
     def __init__(self, *args):
@@ -32,6 +34,7 @@ class MyYolo(Thread):
         print(f"take {e - s} seconds to load the model")
         
     def process_frame(self):    # 处理帧函数
+        global itemColorFlag  # 声明使用全局变量
         while True:
             if not self.frame_queue.empty():
                 t1 = cv2.getTickCount()
@@ -39,11 +42,21 @@ class MyYolo(Thread):
                 results = self.model.predict(source=frame, conf=0.85, imgsz=320, iou=0.50)
                 for r in results:
                     for box in r.boxes:
+                    # 判断检测结果是reditem, greenitem, blueitem
+                        if r.names[box.cls.item()] == 'redItem':
+                            itemColorFlag = 1
+                        elif r.names[box.cls.item()] == 'greenItem':
+                            itemColorFlag = 2
+                        elif r.names[box.cls.item()] == 'blueItem':
+                            itemColorFlag = 3
+                        else:
+                            itemColorFlag = 0
+                        print(f"Item color flag: {itemColorFlag}")
                         x1, y1, x2, y2 = box.xyxy.tolist()[0]
                         center_x = (x1 + x2) / 2
                         center_y = (y1 + y2) / 2
                         if not self.point_queue.full():
-                            self.point_queue.put((center_x, center_y))
+                            self.point_queue.put((center_x, center_y, itemColorFlag))
                 t2 = cv2.getTickCount()
                 elapsed_time = (t2 - t1) / cv2.getTickFrequency()
                 fps = int(1/elapsed_time)
@@ -170,7 +183,8 @@ class SerialSend(Thread):
                 point = self.point_queue.get()
                 # Check if 0.02 seconds have passed since the last send
                 if current_time - self.last_sent_time >= 0.05:
-                    data = f"a{point[0]:5.1f},{point[1]:5.1f}d\r\n".encode('utf-8')
+                    data = f"a{point[0]:5.1f},{point[1]:5.1f},{point[2]:d}d\r\n".encode('utf-8')
+                    # data = f"a{point[0]:5.1f},{point[1]:5.1f}d\r\n".encode('utf-8')
                     self.ser.write(data)
                     print(f"Sent: {data}")
                     self.last_sent_time = current_time
@@ -185,7 +199,8 @@ class Main:
         self.merged_results_queue = Queue(maxsize=1000)    # 合并结果队列
         self.point_queue = Queue(maxsize=1000)    # 中心点坐标队列
         self.model = MyYolo()    # 模型线程， 先加载模型
-        self.cap = cv2.VideoCapture("/dev/video0")    # 摄像头
+        #self.cap = cv2.VideoCapture("/dev/video0")    # 摄像头
+        self.cap = cv2.VideoCapture("/dev/video_camera_UP")
         self.ser = MySerial("/dev/ttyUSB0", 115200)
     def run(self):
         t1 = Capture(self.cap)    # 加载cv和二维码扫描线程
