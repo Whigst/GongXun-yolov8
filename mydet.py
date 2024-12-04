@@ -41,29 +41,38 @@ class MyYolo(Thread):
                 t1 = cv2.getTickCount()
                 frame = self.frame_queue.get()
                 results = self.model.predict(source=frame, conf=0.85, imgsz=640, iou=0.50)
+                min_distance = float('inf')
+                min_distance_item = None
+                min_item_point = None
                 for r in results:
                     for box in r.boxes:
-                    # 判断检测结果是reditem, greenitem, blueitem
-                        if r.names[box.cls.item()] == 'redItem':
-                            itemColorFlag = 1
-                        elif r.names[box.cls.item()] == 'greenItem':
-                            itemColorFlag = 2
-                        elif r.names[box.cls.item()] == 'blueItem':
-                            itemColorFlag = 3
-                        elif r.names[box.cls.item()] == 'redCircle':
-                            itemColorFlag = 4
-                        elif r.names[box.cls.item()] == 'greenCircle':
-                            itemColorFlag = 5
-                        elif r.names[box.cls.item()] == 'blueCircle':
-                            itemColorFlag = 6
-                        else:
-                            itemColorFlag = 0
-                        print(f"Item color flag: {itemColorFlag}")
                         x1, y1, x2, y2 = box.xyxy.tolist()[0]
                         center_x = (x1 + x2) / 2
                         center_y = (y1 + y2) / 2
-                        if not self.point_queue.full():
-                            self.point_queue.put((center_x, center_y, itemColorFlag))
+                        distance = ((center_x - frame.shape[1]/2)**2 + (center_y - frame.shape[0]/2)**2)**0.5
+                        if distance < min_distance:
+                            min_distance = distance
+                            min_distance_item = r.names[box.cls.item()]
+                            min_item_point_x = center_x
+                            min_item_point_y = center_y
+                if min_distance_item is not None:
+                    if min_distance_item == 'redItem':
+                        itemColorFlag = 1
+                    elif min_distance_item == 'greenItem':
+                        itemColorFlag = 2
+                    elif min_distance_item == 'blueItem':
+                        itemColorFlag = 3
+                    elif min_distance_item == 'redcircle':
+                        itemColorFlag = 4
+                    elif min_distance_item == 'greencircle':
+                        itemColorFlag = 5
+                    elif min_distance_item == 'bluecircle':
+                        itemColorFlag = 6
+                    else:
+                        itemColorFlag = 0
+                    print(f"Item color flag: {itemColorFlag}")
+                    if not self.point_queue.full():
+                        self.point_queue.put((min_item_point_x, min_item_point_y, itemColorFlag))
                 t2 = cv2.getTickCount()
                 elapsed_time = (t2 - t1) / cv2.getTickFrequency()
                 fps = int(1/elapsed_time)
@@ -163,7 +172,7 @@ class PostProcess(Thread):
                 results = self.merged_results_queue.get()
                 annotated_frame = results[0].plot()
                 t1 = cv2.getTickCount()
-                cv2.imshow("result", annotated_frame)
+                # cv2.imshow("result", annotated_frame)
                 t2 = cv2.getTickCount()
                 elapsed_time = (t2 - t1) / cv2.getTickFrequency()
                 fps = int(1/elapsed_time)
@@ -199,7 +208,7 @@ class SerialSend(Thread):
                     data = f"a{point[0]:5.1f},{point[1]:5.1f},{point[2]:d}d\r\n".encode('utf-8')
                     # data = f"a{point[0]:5.1f},{point[1]:5.1f}d\r\n".encode('utf-8')
                     self.ser.write(data)
-                    print(f"Sent: {data}")
+                    print(f"\n\n\nSent: {data}\n\n\n")
                     self.last_sent_time = current_time
             else:
                 time.sleep(0.0001)
@@ -233,6 +242,7 @@ class Main:
         t4 = MyYolo(self.frame_queue, self.result_queue, self.point_queue)    # 处理帧线程
         t5 = MyYolo(self.frame_queue, self.result_queue, self.point_queue)
         t6 = MyYolo(self.frame_queue, self.result_queue, self.point_queue)
+        # t10 = MyYolo(self.frame_queue, self.result_queue, self.point_queue)
         t7 = PostProcess(self.merged_results_queue, self.result_queue, self.point_queue)    # 结果处理线程
         t8 = PostProcess(self.merged_results_queue)    # 结果显示线程
         t9 = SerialSend(self.ser, self.point_queue)    # 串口发送线程
@@ -240,6 +250,7 @@ class Main:
         t4.start()
         t5.start()
         t6.start()
+        # t10.start()
         t7.start()
         t8.start()
         t9.start()
