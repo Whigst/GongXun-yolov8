@@ -1,4 +1,5 @@
 from ultralytics import YOLO
+
 from pyzbar.pyzbar import decode
 import cv2
 import time
@@ -12,7 +13,7 @@ itemColorFlag = 0
 class MyYolo(Thread):
     def __init__(self, *args):
         super().__init__()  # 初始化线程
-        self.model = YOLO("models/cirAndMat.engine", task='detect')  # 加载模型
+        self.model = YOLO("models/cirAndMat_2.engine", task='detect')  # 加载模型
         self.flag = False  # 标志位， 用于判断是否需要处理帧
         if not len(args) == 0:
             self.frame_queue = args[0]
@@ -29,7 +30,7 @@ class MyYolo(Thread):
             
     def model_Load(self):    # 模型加载函数
         s = time.time()
-        self.preheating_predict(source="ultralytics/assets/3.jpg", conf=0.75, iou=0.50, imgsz=320)
+        self.preheating_predict(source="ultralytics/assets/3.jpg", conf=0.75, iou=0.50, imgsz=640)
         e = time.time()
         print(f"take {e - s} seconds to load the model")
         
@@ -39,7 +40,7 @@ class MyYolo(Thread):
             if not self.frame_queue.empty():
                 t1 = cv2.getTickCount()
                 frame = self.frame_queue.get()
-                results = self.model.predict(source=frame, conf=0.85, imgsz=320, iou=0.50)
+                results = self.model.predict(source=frame, conf=0.85, imgsz=640, iou=0.50)
                 for r in results:
                     for box in r.boxes:
                     # 判断检测结果是reditem, greenitem, blueitem
@@ -49,6 +50,12 @@ class MyYolo(Thread):
                             itemColorFlag = 2
                         elif r.names[box.cls.item()] == 'blueItem':
                             itemColorFlag = 3
+                        elif r.names[box.cls.item()] == 'redCircle':
+                            itemColorFlag = 4
+                        elif r.names[box.cls.item()] == 'greenCircle':
+                            itemColorFlag = 5
+                        elif r.names[box.cls.item()] == 'blueCircle':
+                            itemColorFlag = 6
                         else:
                             itemColorFlag = 0
                         print(f"Item color flag: {itemColorFlag}")
@@ -87,6 +94,7 @@ class Capture(Thread):
         
     def CapLoadAndQRScan(self):    # 摄像头加载与二维码扫描函数
         s = time.time()
+        QR_ser = MySerial("/dev/ttyUSB0", 115200)
         print(self.cap.isOpened())
         while self.cap.isOpened():
             ret, frame = self.cap.read()
@@ -95,6 +103,9 @@ class Capture(Thread):
                 if decoded_objects and len(decoded_objects) > 0:
                     for obj in decoded_objects:
                         print(f"Decoded Data: {obj.data.decode('utf-8')}")
+                        # QR_ser.write_data(obj.data.decode('utf-8'))
+                        QR_data = f'c3,2,1d\r\n'.encode('utf-8')
+                        QR_ser.write(QR_data)
                         e = time.time()
                         print(f"take {e - s} seconds to decode the QR")
                     break
@@ -175,6 +186,8 @@ class SerialSend(Thread):
         self.ser = ser
         self.point_queue = point_queue
         self.last_sent_time = time.time()
+    
+    
 
     def run(self):
         while True:
@@ -201,15 +214,17 @@ class Main:
         self.model = MyYolo()    # 模型线程， 先加载模型
         #self.cap = cv2.VideoCapture("/dev/video0")    # 摄像头
         self.cap = cv2.VideoCapture("/dev/video_camera_UP")
+        self.cap_middle = cv2.VideoCapture("/dev/video_camera_MIDDLE")
+        # self.cap_middle = cv2.VideoCapture(1)
         self.ser = MySerial("/dev/ttyUSB0", 115200)
     def run(self):
-        t1 = Capture(self.cap)    # 加载cv和二维码扫描线程
+        t1 = Capture(self.cap_middle)    # 加载cv和二维码扫描线程
         #ser_t = Thread(target=self.ser.run_serial, args=(self.point_queue,))
         t2 = self.model
         #ser_t.start()
         t2.start()
         t1.start()
-        #t1.join()
+        t1.join()
         print("cv_Loader_And_QR_Scan finished")
         t2.join()
         print("model_Loader finished")
