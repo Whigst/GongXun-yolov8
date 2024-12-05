@@ -112,9 +112,19 @@ class Capture(Thread):
                 if decoded_objects and len(decoded_objects) > 0:
                     for obj in decoded_objects:
                         print(f"Decoded Data: {obj.data.decode('utf-8')}")
+                        data = obj.data.decode('utf-8')
+                        numbers = data.split('+')
+                        if len(numbers) == 2 and all(len(number) == 3 and number.isdigit() for number in numbers):
+                            first_number = ''.join(numbers[0])
+                            second_number = ''.join(numbers[1])
+                            # QR_ser.write_data(first_number.encode('utf-8'))
+                            # QR_ser.write_data(second_number.encode('utf-8'))
+                        else:
+                            print("Invalid QR data format")
                         # QR_ser.write_data(obj.data.decode('utf-8'))
-                        QR_data = f'c3,2,1d\r\n'.encode('utf-8')
-                        QR_ser.write(QR_data)
+                        # QR_data = f'c3,2,1d\r\n'.encode('utf-8')
+                        QR_data = f'c{first_number[0]},{first_number[1]},{first_number[2]},{second_number[0]},{second_number[1]},{second_number[2]}b'
+                        QR_ser.write_data(QR_data)
                         e = time.time()
                         print(f"take {e - s} seconds to decode the QR")
                     break
