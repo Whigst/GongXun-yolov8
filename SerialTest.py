@@ -36,6 +36,7 @@ class MySerial(serial.Serial):
             elif data_type == 'str' and self.in_waiting > 0:
                 data = self.read(self.in_waiting)  # 读取所有可用字节
                 unpacked_data = data.decode('utf-8')  # 将二进制数据解码成字符串
+                return unpacked_data
             else:
                 return  # 如果没有足够的数据，则直接返回
             print(f"Received: {unpacked_data}")
