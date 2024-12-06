@@ -267,8 +267,6 @@ class Main:
         # self.cap_middle = cv2.VideoCapture(1)
         self.ser = MySerial("/dev/ttyUSB0", 115200)
     def run(self):
-        # Serial_read_thread = Thread(target=self.ser.read_data, args=(str,))
-        # Serial_read_thread.start()
         Serial_read_thread = SerialRead(self.ser, self.cap_middle)
         Serial_read_thread.start()
         # t1 = Capture(self.cap_middle)    # 加载cv和二维码扫描线程
