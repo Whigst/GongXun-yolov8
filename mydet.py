@@ -8,6 +8,7 @@ from threading import Thread
 from SerialTest import MySerial
 
 itemColorFlag = 0
+QR_Mission_Flag = 0
 
 #主要为与模型有关的类， 包括模型加载， 预测， 预加热， 处理帧
 class MyYolo(Thread):
@@ -223,6 +224,35 @@ class SerialSend(Thread):
             else:
                 time.sleep(0.0001)
 
+class SerialRead(Thread):
+    def __init__(self, ser, cap_middle):
+        super().__init__()
+        self.ser = ser
+        self.cap_middle = cap_middle
+        self.last_sent_time = time.time()
+    
+    def run(self):
+        global QR_Mission_Flag
+        while True:
+            if self.ser.in_waiting:
+                data = self.ser.read_data(data_type='str')
+                print(f"\n\nReceived: {data}\n\n")
+                if data == 'e1f':
+                    QR_Mission_Flag = 0
+                    print(f"\n\n{QR_Mission_Flag}\n\n")
+                print(f"\n\n{QR_Mission_Flag}\n\n")
+            else:
+                time.sleep(2)
+            
+            if QR_Mission_Flag == 0:
+                print("\n\n\n\n")
+                t1 = Capture(self.cap_middle)
+                t1.start()
+                t1.join()
+                print("\n\ncv_Loader_And_QR_Scan finished\n\n")
+                QR_Mission_Flag = 1
+                
+
 #主函数， 用于初始化线程
 class Main:
     def __init__(self):
@@ -237,14 +267,16 @@ class Main:
         # self.cap_middle = cv2.VideoCapture(1)
         self.ser = MySerial("/dev/ttyUSB0", 115200)
     def run(self):
-        t1 = Capture(self.cap_middle)    # 加载cv和二维码扫描线程
+        Serial_read_thread = SerialRead(self.ser, self.cap_middle)
+        Serial_read_thread.start()
+        # t1 = Capture(self.cap_middle)    # 加载cv和二维码扫描线程
         #ser_t = Thread(target=self.ser.run_serial, args=(self.point_queue,))
         t2 = self.model
         #ser_t.start()
         t2.start()
-        t1.start()
-        t1.join()
-        print("cv_Loader_And_QR_Scan finished")
+        # t1.start()
+        # t1.join()
+        # print("cv_Loader_And_QR_Scan finished")
         t2.join()
         print("model_Loader finished")
         print(f"{self.frame_queue.empty()}")
