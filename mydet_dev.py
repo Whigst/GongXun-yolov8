@@ -10,6 +10,9 @@ from SerialTest import MySerial
 
 itemColorFlag = 0
 QR_Mission_Flag = 0
+first_number = ''
+second_number = ''
+decoded_objects = []
 
 # LOG_FORMAT = "%(asctime)s - %(levelname)s - %(thread)s - %(message)s"
 # DATE_FORMAT = "%m/%d/%Y %H:%M:%S"
@@ -120,14 +123,19 @@ class Capture(Thread):
         
     def CapLoadAndQRScan(self):    # 摄像头加载与二维码扫描函数
         global logger
+        global first_number
+        global second_number
+        global decoded_objects
         s = time.time()
         QR_ser = MySerial("/dev/ttyUSB0", 115200)
         print(self.cap.isOpened())
+        print(f"\n\n{decoded_objects}\n\n")
         while self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret:
                 decoded_objects = decode(frame)
                 if decoded_objects and len(decoded_objects) > 0:
+                    print(f'{first_number},{second_number},{decoded_objects}')
                     for obj in decoded_objects:
                         # print(f"Decoded Data: {obj.data.decode('utf-8')}")
                         logger.info("QR_DATA: %s", obj.data.decode('utf-8'))
@@ -147,12 +155,21 @@ class Capture(Thread):
                         QR_ser.write_data(QR_data)
                         e = time.time()
                         # print(f"take {e - s} seconds to decode the QR")
+                    data = ''
+                    ret = None
+                    frame = None
+                    first_number = ''
+                    second_number = ''
+                    decoded_objects = []
+                    print("\n\ncleared\n\n")
+                    print(f'{first_number},{second_number},{data},{decoded_objects}')
                     break
                 else:
                     continue
             else:
                 print("No frame captured")
                 logger.error("No frame captured")
+        print("\n\n\nExited\n\n\n")
 
                 
     def CaptureFrames(self):    # 捕获帧函数
@@ -249,10 +266,10 @@ class SerialSend(Thread):
                 time.sleep(0.0001)
 
 class SerialRead(Thread):
-    def __init__(self, ser, cap_middle):
+    def __init__(self, ser):
         super().__init__()
         self.ser = ser
-        self.cap_middle = cap_middle
+        # self.cap_middle = cap_middle
         self.last_sent_time = time.time()
     
     def run(self):
@@ -270,9 +287,13 @@ class SerialRead(Thread):
             
             if QR_Mission_Flag == 0:
                 print("\n\n\n\n")
-                t1 = Capture(self.cap_middle)
+                cap_middle = cv2.VideoCapture("/dev/video_camera_MIDDLE")
+                t1 = Capture(cap_middle)
                 t1.start()
                 t1.join()
+                del t1
+                del cap_middle
+                print("\n\nt1 deleted\n\n")
                 print("\n\ncv_Loader_And_QR_Scan finished\n\n")
                 QR_Mission_Flag = 1
                 
@@ -287,7 +308,7 @@ class Main:
         self.model = MyYolo()    # 模型线程， 先加载模型
         #self.cap = cv2.VideoCapture("/dev/video0")    # 摄像头
         self.cap = cv2.VideoCapture("/dev/video_camera_UP")
-        self.cap_middle = cv2.VideoCapture("/dev/video_camera_MIDDLE")
+        # self.cap_middle = cv2.VideoCapture("/dev/video_camera_MIDDLE")
         # self.cap_middle = cv2.VideoCapture(1)
         self.ser = MySerial("/dev/ttyUSB0", 115200)
     def run(self):
@@ -312,7 +333,8 @@ class Main:
         logger.addHandler(QR_DATA_handler)
         logger.addHandler(ERROR_handler)
 
-        Serial_read_thread = SerialRead(self.ser, self.cap_middle)
+        # Serial_read_thread = SerialRead(self.ser, self.cap_middle)
+        Serial_read_thread = SerialRead(self.ser)
         Serial_read_thread.start()
         # t1 = Capture(self.cap_middle)    # 加载cv和二维码扫描线程
         #ser_t = Thread(target=self.ser.run_serial, args=(self.point_queue,))
