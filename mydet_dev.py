@@ -56,6 +56,8 @@ class MyYolo(Thread):
         
     def process_frame(self):    # 处理帧函数
         global itemColorFlag  # 声明使用全局变量
+        lastTime = time.time()
+        NoProcess_ser = MySerial("/dev/bluetooth", 115200)
         while True:
             if not self.frame_queue.empty():
                 t1 = cv2.getTickCount()
@@ -65,6 +67,15 @@ class MyYolo(Thread):
                 min_distance_item = None
                 min_item_point = None
                 for r in results:
+                    if len(r.boxes) == 0:
+                        # print("!!!!!!!!!!!!!!!!!!!!!!!\n!!!!!!!!!!!!!!!!!!!!!!!\nNo objects detected!!!!!!!!!!!!!!!!!!!!!!!\n!!!!!!!!!!!!!!!!!!!!!!!\n")x
+                        currentTime = time.time()
+                        if currentTime - lastTime > 0.02:
+                            lastTime = currentTime
+                            NoProcess_ser.write_data('g9h')
+                            # print("Sent 9")
+
+
                     for box in r.boxes:
                         x1, y1, x2, y2 = box.xyxy.tolist()[0]
                         center_x = (x1 + x2) / 2
@@ -255,7 +266,7 @@ class SerialSend(Thread):
             if not self.point_queue.empty():
                 point = self.point_queue.get()
                 # Check if 0.02 seconds have passed since the last send
-                if current_time - self.last_sent_time >= 0.05:
+                if current_time - self.last_sent_time >= 0.02:
                     data = f"a{point[0]:5.1f},{point[1]:5.1f},{point[2]:d}d\r\n".encode('utf-8')
                     # data = f"a{point[0]:5.1f},{point[1]:5.1f}d\r\n".encode('utf-8')
                     self.ser.write(data)
