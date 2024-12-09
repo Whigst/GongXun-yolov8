@@ -1,3 +1,6 @@
+基于yolov8开发的用于2025年工训赛的代码
+主要功能有 识别物料和色环并通过串口发送他们的中心点的坐标
+
 <div align="center">
   <p>
     <a href="https://www.ultralytics.com/events/yolovision" target="_blank">
