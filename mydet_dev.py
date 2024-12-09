@@ -60,7 +60,7 @@ class MyYolo(Thread):
             if not self.frame_queue.empty():
                 t1 = cv2.getTickCount()
                 frame = self.frame_queue.get()
-                results = self.model.predict(source=frame, conf=0.85, imgsz=640, iou=0.50)
+                results = self.model.predict(source=frame, conf=0.9, imgsz=640, iou=0.50)
                 min_distance = float('inf')
                 min_distance_item = None
                 min_item_point = None
@@ -127,7 +127,8 @@ class Capture(Thread):
         global second_number
         global decoded_objects
         s = time.time()
-        QR_ser = MySerial("/dev/ttyUSB0", 115200)
+        #QR_ser = MySerial("/dev/ttyUSB0", 115200)
+        QR_ser = MySerial("/dev/bluetooth", 115200)
         print(self.cap.isOpened())
         print(f"\n\n{decoded_objects}\n\n")
         while self.cap.isOpened():
@@ -308,9 +309,11 @@ class Main:
         self.model = MyYolo()    # 模型线程， 先加载模型
         #self.cap = cv2.VideoCapture("/dev/video0")    # 摄像头
         self.cap = cv2.VideoCapture("/dev/video_camera_UP")
+        #self.cap = cv2.VideoCapture(0)
         # self.cap_middle = cv2.VideoCapture("/dev/video_camera_MIDDLE")
         # self.cap_middle = cv2.VideoCapture(1)
-        self.ser = MySerial("/dev/ttyUSB0", 115200)
+        #self.ser = MySerial("/dev/ttyUSB0", 115200)
+        self.ser = MySerial("/dev/bluetooth", 115200)
     def run(self):
         global logger
         logger.setLevel(logging.DEBUG)
